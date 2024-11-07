@@ -3,11 +3,11 @@ from torch import nn
 
 from functools import partial
 
-from utils import *
-from position_embedding import SinusoidalPositionEmbeddings
-from resnet_block import ResnetBlock
-from attention_module import Attention, LinearAttention
-from normalization import PreNorm
+from .utils import *
+from .position_embedding import SinusoidalPositionEmbeddings
+from .resnet_block import ResnetBlock
+from .attention_module import Attention, LinearAttention
+from .normalization import PreNorm
 
 
 class Unet(nn.Module):

@@ -4,7 +4,9 @@ import torch.nn.functional as F
 
 from functools import partial
 
-from einops import rearrange
+from einops import rearrange, reduce
+
+from .utils import exists
 
 
 class WeightStandardizedConv2d(nn.Conv2d):
