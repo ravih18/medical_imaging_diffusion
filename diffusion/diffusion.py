@@ -61,9 +61,8 @@ class DiffusionModel(nn.Module):
 
     def train(self, epochs, optimizer, trainloader):
         for epoch in range(epochs):
-            print(f"Epoch {epoch}")
             accumulated_losses = 0
-            for step, batch in tqdm(enumerate(trainloader)):
+            for step, batch in tqdm(enumerate(trainloader), f"Epoch {epoch}", total=len(trainloader)):
                 optimizer.zero_grad()
 
                 batch_size = batch["T1"].shape[0]
