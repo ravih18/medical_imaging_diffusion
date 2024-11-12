@@ -59,7 +59,7 @@ class DiffusionModel(nn.Module):
 
         return loss
 
-    def train(self, epochs, optimizer, trainloader):
+    def train(self, epochs, optimizer, trainloader, valloader=None):
         for epoch in range(epochs):
             accumulated_losses = 0
             for step, batch in tqdm(enumerate(trainloader), f"Epoch {epoch}", total=len(trainloader)):
@@ -77,5 +77,13 @@ class DiffusionModel(nn.Module):
                 optimizer.step()
 
                 accumulated_losses += loss.item()
+            print(f"Train Loss: {accumulated_losses/len(trainloader)}", )
 
-            print("Loss:", accumulated_losses/len(trainloader))
+            if valloader is not None:
+                val_loss = 0
+                with torch.no_grad():
+                    for _, batch in enumerate(valloader):
+                        batch = batch["T1"].to(torch.float).to(self.device)
+                        t = torch.randint(0, self.timesteps, (batch_size,), device=self.device).long()
+                        val_loss += self.p_losses(batch, t).item()
+                print(f"Val Loss: {val_loss/len(valloader)}")
