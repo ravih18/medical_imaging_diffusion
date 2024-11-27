@@ -20,9 +20,11 @@ class Unet(nn.Module):
         channels=3,
         self_condition=False,
         resnet_block_groups=4,
+        n_block_klass = 2
     ):
         super().__init__()
-
+        # Determine the number of Resnet blocks
+        self.n_block_klass = n_block_klass
         # determine dimensions
         self.channels = channels
         self.self_condition = self_condition
@@ -33,9 +35,9 @@ class Unet(nn.Module):
 
         dims = [init_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
-
+        
         block_klass = partial(ResnetBlock, groups=resnet_block_groups)
-
+        
         # time embeddings
         time_dim = dim * 4
 
@@ -57,8 +59,7 @@ class Unet(nn.Module):
             self.downs.append(
                 nn.ModuleList(
                     [
-                        block_klass(dim_in, dim_in, time_emb_dim=time_dim),
-                        block_klass(dim_in, dim_in, time_emb_dim=time_dim),
+                        *[block_klass(dim_in, dim_in, time_emb_dim=time_dim) for i in range(self.n_block_klass)],
                         Residual(PreNorm(dim_in, LinearAttention(dim_in))),
                         Downsample(dim_in, dim_out)
                         if not is_last
@@ -78,8 +79,7 @@ class Unet(nn.Module):
             self.ups.append(
                 nn.ModuleList(
                     [
-                        block_klass(dim_out + dim_in, dim_out, time_emb_dim=time_dim),
-                        block_klass(dim_out + dim_in, dim_out, time_emb_dim=time_dim),
+                        *[block_klass(dim_out + dim_in, dim_out, time_emb_dim=time_dim) for i in range(self.n_block_klass)],
                         Residual(PreNorm(dim_out, LinearAttention(dim_out))),
                         Upsample(dim_out, dim_in)
                         if not is_last
@@ -105,29 +105,36 @@ class Unet(nn.Module):
 
         h = []
 
-        for block1, block2, attn, downsample in self.downs:
-            x = block1(x, t)
-            h.append(x)
+        for i in range(len(self.downs)):
+            if self.n_block_klass>1:
+                for block in self.downs[i][:self.n_block_klass-1]:
+                    x = block(x, t)
+                    h.append(x)
 
-            x = block2(x, t)
-            x = attn(x)
-            h.append(x)
+            for block, attn, downsample in [self.downs[i][self.n_block_klass-1:]]:
 
-            x = downsample(x)
+                x = block(x, t)
+                x = attn(x)
+                h.append(x)
+
+                x = downsample(x)
 
         x = self.mid_block1(x, t)
         x = self.mid_attn(x)
         x = self.mid_block2(x, t)
 
-        for block1, block2, attn, upsample in self.ups:
-            x = torch.cat((x, h.pop()), dim=1)
-            x = block1(x, t)
+        for i in range(len(self.ups)):
+            if self.n_block_klass>1:
+                for block in self.ups[i][:self.n_block_klass-1]:
+                    x = torch.cat((x, h.pop()), dim=1)
+                    x = block(x, t)
 
-            x = torch.cat((x, h.pop()), dim=1)
-            x = block2(x, t)
-            x = attn(x)
+            for block, attn, upsample in [self.ups[i][self.n_block_klass-1:]]:
+                x = torch.cat((x, h.pop()), dim=1)
+                x = block(x, t)
+                x = attn(x)
 
-            x = upsample(x)
+                x = upsample(x)
 
         x = torch.cat((x, r), dim=1)
 
