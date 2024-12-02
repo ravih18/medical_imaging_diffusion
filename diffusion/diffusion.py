@@ -71,27 +71,19 @@ class DiffusionModel(nn.Module):
             loss = F.smooth_l1_loss(noise, predicted_noise)
         else:
             raise NotImplementedError()
-
-        #denoised = self.p_sample(x_start, predicted_noise, t)
-        #psnr = batch_psnr(x_start, denoised, max_I=1.)
-
         return loss
 
     def train(self, epochs, optimizer, trainloader, valloader=None):
         
         loss_train_list, loss_val_list = [], []
-        psnr_train_list, psnr_val_list = [], []
-
         for epoch in range(epochs):
             train_loss = 0
-            #train_psnr = 0
             for step, batch in tqdm(enumerate(trainloader), f"Epoch {epoch}", total=len(trainloader)):
                 optimizer.zero_grad()
 
                 batch_size = batch["T1"].shape[0]
                 batch = batch["T1"].to(torch.float).to(self.device)
 
-                # Algorithm 1 line 3: sample t uniformally for every example in the batch
                 t = torch.randint(0, self.timesteps, (batch_size,), device=self.device).long()
 
                 loss = self.p_losses(batch, t)
@@ -100,8 +92,6 @@ class DiffusionModel(nn.Module):
                 optimizer.step()
 
                 train_loss += loss.item()
-                #train_psnr += psnr.item()
-            #psnr_train_list.append(train_psnr.detach().numpy())
             print(f"Train Loss: {train_loss/len(trainloader)}", )
 
             if valloader is not None:
@@ -110,36 +100,34 @@ class DiffusionModel(nn.Module):
                 with torch.no_grad():
                     for _, batch in enumerate(valloader):
                         batch = batch["T1"].to(torch.float).to(self.device)
+
                         t = torch.randint(0, self.timesteps, (batch_size,), device=self.device).long()
+                        
                         loss = self.p_losses(batch, t ,loss_type=self.loss_type)
+                        
                         val_loss += loss.item()
-                        #val_psnr += psnr
-                #psnr_val_list.append(val_psnr.detach().numpy())
                 print(f"Val Loss: {val_loss/len(valloader)}")
         print("End of training!")
-        #return psnr_train_list, psnr_val_list
 
-    def compute_psnr(self, dataloader):
+    def compute_psnr(self, dataloader, psnr_step=10):
         psnr_out_list = []
         psnr_in_list = []
-        for t in range(0, self.timesteps, 10):
+        for t in tqdm(range(0, self.timesteps, psnr_step)):
             loss_accumulated = 0
             for step, batch in enumerate(dataloader):
-                x_shape = batch["T1"].shape
-                batch_size = batch["T1"].shape[0]
                 batch = batch["T1"].to(torch.float).to(self.device)
                 
-                t_tensor = torch.full((batch_size,), t, device=self.device).long()
+                t_tensor = torch.full_like(batch, t, device=self.device).long()
 
                 loss = self.p_losses(batch, t_tensor, loss_type='l2')
-                loss_accumulated += loss.item() / batch_size
+                loss_accumulated += loss.item() / len(dataloader.batch_size)
 
             alphas_cumprod_t = self.alphas_cumprod[t]
-            psnr_out = 10 * (np.log10(2**2) - torch.log10(1 - alphas_cumprod_t) / alphas_cumprod_t * loss_accumulated)
+            psnr_out = 10 * (np.log10(2**2) - torch.log10((1 - alphas_cumprod_t) / alphas_cumprod_t * loss_accumulated))
             psnr_in = 10 * np.log10(2**2 * alphas_cumprod_t/(1 - alphas_cumprod_t))
 
-            psnr_in_list.append(psnr_in)
-            psnr_out_list.append(psnr_out)
+            psnr_in_list.append(psnr_in.numpy())
+            psnr_out_list.append(psnr_out.numpy())
 
-        return psnr_in_list, psnr_out_list
+        return np.array(psnr_in_list), np.array(psnr_out_list)
 
