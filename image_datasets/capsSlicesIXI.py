@@ -15,13 +15,15 @@ class CapsSlicesIXI(Dataset):
         transformations: Optional[Callable]=None,
     ):
         self.caps_directory = Path(caps_directory)
-        self.transformations = transformations
         self.df = pd.read_csv(subject_tsv, sep='\t', )
+
         self.slice_min = 80
         self.slice_max = 110
-
         self.elem_per_image = self.slice_max - self.slice_min
-        self.size = self[0]["image_t1w"].size()
+
+        self.transformations = transformations
+
+        self.size = self[0]["T1"].size()
 
     def __len__(self) -> int:
         return len(self.df) * self.elem_per_image
@@ -48,8 +50,14 @@ class CapsSlicesIXI(Dataset):
             / f"{participant}_ses-m000_T2w_space-MNI152NLin2009cSym_res-1x1x1_T2w_slice-axial_{slice_idx}.pt"
         )
 
-        slice_t1w = torch.load(t1w_path)
-        slice_t2w = torch.load(t2w_path)
+        try:
+            slice_t1w = torch.load(t1w_path).unsqueeze(dim=0)
+        except:
+            raise ValueError(f"File {t1w_path} does not exist.")
+        try:
+            slice_t2w = torch.load(t2w_path).unsqueeze(dim=0)
+        except:
+            raise ValueError(f"File {t2w_path} does not exist.")
 
         if self.transformations:
             slice_t1w = self.transformations(slice_t1w)
