@@ -4,21 +4,30 @@ import torch.nn.functional as F
 import numpy as np
 
 from tqdm import tqdm
+import json
+import time
 
 from .utils import extract, batch_psnr
+from .time_scheduler import quadratic_beta_schedule
 
 class DiffusionModel(nn.Module):
 
-    def __init__(self, model, timesteps, betas, device, loss_type='l1'):
+    def __init__(self, model, diffusion_config, device, experiment_directory=None):
         super(DiffusionModel, self).__init__()
+        self.experiment_directory = experiment_directory
+        
         self.model = model
-        self.loss_type = loss_type
+        self.loss_type = diffusion_config.loss_type
         self.device = device
 
-        self.timesteps = timesteps
-        self.betas = betas
+        self.timesteps = diffusion_config.timesteps
+        self.betas = quadratic_beta_schedule(
+            self.timesteps,
+            beta_start=diffusion_config.beta_start,
+            beta_end=diffusion_config.beta_end,
+        )
         # define alphas 
-        alphas = 1. - betas
+        alphas = 1. - self.betas
         self.alphas_cumprod = torch.cumprod(alphas, axis=0)
         alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
         self.sqrt_recip_alphas = torch.sqrt(1.0 / alphas)
@@ -28,7 +37,7 @@ class DiffusionModel(nn.Module):
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - self.alphas_cumprod)
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
-        self.posterior_variance = betas * (1. - alphas_cumprod_prev) / (1. - self.alphas_cumprod)
+        self.posterior_variance = self.betas * (1. - alphas_cumprod_prev) / (1. - self.alphas_cumprod)
 
     def q_sample(self, x_start, t, noise=None):
         # forward diffusion (using the nice property)
@@ -73,12 +82,14 @@ class DiffusionModel(nn.Module):
             raise NotImplementedError()
         return loss
 
-    def train(self, epochs, optimizer, trainloader, valloader=None):
-        
-        loss_train_list, loss_val_list = [], []
+    def train(self, epochs, optimizer, trainloader, valloader=None, scheduler=None):
+        print("\n\nStart training!")
+        best_val_loss = np.inf
         for epoch in range(epochs):
             train_loss = 0
-            for step, batch in tqdm(enumerate(trainloader), f"Epoch {epoch}", total=len(trainloader)):
+            print(f"Training epochs {epoch}/{epochs}")
+            start_time = time.time()
+            for step, batch in enumerate(trainloader):
                 optimizer.zero_grad()
 
                 batch_size = batch["T1"].shape[0]
@@ -92,11 +103,10 @@ class DiffusionModel(nn.Module):
                 optimizer.step()
 
                 train_loss += loss.item()
-            print(f"Train Loss: {train_loss/len(trainloader)}", )
+            print(f"  Train Loss:\t{(train_loss/len(trainloader)):.6f}", )
 
             if valloader is not None:
                 val_loss = 0
-                #val_psnr = 0
                 with torch.no_grad():
                     for _, batch in enumerate(valloader):
                         batch = batch["T1"].to(torch.float).to(self.device)
@@ -106,8 +116,26 @@ class DiffusionModel(nn.Module):
                         loss = self.p_losses(batch, t ,loss_type=self.loss_type)
                         
                         val_loss += loss.item()
-                print(f"Val Loss: {val_loss/len(valloader)}")
+                print(f"  Val Loss:\t{(val_loss/len(valloader)):.6f}")
+
+            print(f"  Time: {(time.time() - start_time):.3f} seconds")
+
+            if (scheduler is not None) and epoch%10==9:
+                scheduler.step()
+                print(f"  Learning rate after scheduler step: {scheduler.get_last_lr()[0]}")
+
+            if self.experiment_directory is not None:
+                self._save_checkpoint(epoch)
+                if valloader is not None:
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        self.save_model(epoch, best_val_loss)
+                
         print("End of training!")
+
+        if self.experiment_directory is not None and valloader is None:
+            self.save_model(epochs, val_loss)
+            print(f"Saved model after last epoch.")
 
     def compute_psnr(self, dataloader, psnr_step=10):
         psnr_out_list = []
@@ -131,3 +159,22 @@ class DiffusionModel(nn.Module):
 
         return np.array(psnr_in_list), np.array(psnr_out_list)
 
+    def _save_checkpoint(self, epoch):
+        checkpoint_dir = self.experiment_directory / "checkpoint"
+        checkpoint_dir.mkdir(parents = True, exist_ok = True)
+        torch.save(self.model.state_dict(), (checkpoint_dir / "denoiser_unet_checkpoint.pt"))
+        with open((checkpoint_dir / "checkpoint.json"), 'w') as fp:
+            json.dump({"current_epochs": epoch}, fp)
+
+    def save_model(self, epoch, val_loss):
+        model_dir = self.experiment_directory / "best_loss"
+        model_dir.mkdir(parents = True, exist_ok = True)
+        torch.save(self.model.state_dict(), (model_dir / "denoiser_unet.pt"))
+        with open((model_dir / "best_model.json"), 'w') as fp:
+            json.dump(
+                {
+                    "current_epochs": epoch,
+                    "validation_loss": val_loss,
+                },
+                fp
+            )
