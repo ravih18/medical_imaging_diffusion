@@ -159,6 +159,50 @@ class DiffusionModel(nn.Module):
 
         return np.array(psnr_in_list), np.array(psnr_out_list)
 
+    def denoise(self, x_start, t, noise=None, plot=False):
+        # Input (1,1,M,N)
+        if noise is None:
+            noise = torch.randn_like(x_start)
+
+        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
+        predicted_noise = self.model(x_noisy.to(self.device), t.to(self.device)).detach().cpu()
+        
+        sqrt_alphas_cumprod_t = extract(self.sqrt_alphas_cumprod, t, x_start.shape)[0,0,0,0]
+        sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)[0,0,0,0]
+
+        denoised_x_start = (x_noisy-predicted_noise*sqrt_one_minus_alphas_cumprod_t)/sqrt_alphas_cumprod_t
+        
+        MSE_noisy = torch.mean((x_noisy/sqrt_alphas_cumprod_t-x_start)**2).numpy()
+        MSE_denoised = torch.mean((denoised_x_start-x_start)**2).numpy()
+        
+        PSNR_noisy = 10*np.log10(2**2/MSE_noisy)
+        PSNR_denoised = 10*np.log10(2**2/MSE_denoised)
+        
+        MSE_noisy_theory = (sqrt_one_minus_alphas_cumprod_t/sqrt_alphas_cumprod_t)**2
+        PSNR_noisy_theory = 10 * np.log10(2**2/MSE_noisy_theory)
+
+        if plot:
+            
+            print('Sigma=', (sqrt_one_minus_alphas_cumprod_t/sqrt_alphas_cumprod_t).numpy(),'. Values of vmin and vmax are set according to the original image colormap.')
+            
+            vmin = x_start[0,0].cpu().min()
+            vmax = x_start[0,0].cpu().max()
+            
+            plt.figure(figsize=(12,5))
+            plt.subplot(131)
+            plt.imshow(x_noisy[0,0].cpu()/sqrt_alphas_cumprod_t, vmin=vmin, vmax=vmax)
+            plt.title('Noisy')
+            plt.subplot(132)
+            plt.imshow(denoised_x_start[0,0].detach().cpu(), vmin=vmin, vmax=vmax)
+            plt.title('Denoised')
+            plt.subplot(133)
+            plt.imshow(x_start[0,0].cpu(), vmin=vmin, vmax=vmax)
+            plt.title('Original')
+            plt.show()
+            
+            print('Original MSE/PSNR:', MSE_noisy, '/', PSNR_noisy,', theoretical values:', MSE_noisy_theory, '/', PSNR_noisy_theory)
+            print('Denoised MSE/PSNR:', MSE_denoised, '/', PSNR_denoised, '.')
+
     def _save_checkpoint(self, epoch):
         checkpoint_dir = self.experiment_directory / "checkpoint"
         checkpoint_dir.mkdir(parents = True, exist_ok = True)
