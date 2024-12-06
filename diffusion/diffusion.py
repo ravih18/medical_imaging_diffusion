@@ -203,6 +203,8 @@ class DiffusionModel(nn.Module):
             print('Original MSE/PSNR:', MSE_noisy, '/', PSNR_noisy,', theoretical values:', MSE_noisy_theory, '/', PSNR_noisy_theory)
             print('Denoised MSE/PSNR:', MSE_denoised, '/', PSNR_denoised, '.')
 
+        return denoised_x_start
+
     def _save_checkpoint(self, epoch):
         checkpoint_dir = self.experiment_directory / "checkpoint"
         checkpoint_dir.mkdir(parents = True, exist_ok = True)
