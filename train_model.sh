@@ -7,8 +7,8 @@
 #SBATCH --hint=nomultithread
 #SBATCH --account=krk@v100
 #SBATCH --qos=qos_gpu-t3
-#SBATCH --time=10:00:00
+#SBATCH --time=20:00:00
 
 module load pytorch-gpu/py3/2.3.0
 
-python main.py
+python main_dsb.py 29
