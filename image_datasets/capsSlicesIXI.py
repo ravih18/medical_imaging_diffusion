@@ -12,6 +12,7 @@ class CapsSlicesIXI(Dataset):
         self,
         caps_directory: Path,
         subject_tsv: Path,
+        sequence: Optional[str]=None,
         transformations: Optional[Callable]=None,
     ):
         self.caps_directory = Path(caps_directory)
@@ -23,14 +24,24 @@ class CapsSlicesIXI(Dataset):
 
         self.transformations = transformations
 
-        self.size = self[0]["T1"].size()
+        if sequence is not None:
+            if (sequence != 'T1') and (sequence != 'T2'):
+                raise ValueError("Invalid value for sequence argument. Sequence must be 'T1' or 'T2'.")
+            self.sequence = [sequence]
+        else:
+            self.sequence = ['T1', 'T2']
+        self.size = self[0][self.sequence[0]].size()
 
     def __len__(self) -> int:
         return len(self.df) * self.elem_per_image
 
     def __getitem__(self, idx):
         participant, slice_idx = self._get_meta_data(idx)
-        
+        data = {
+            "participant_id": participant,
+            "slice_id": slice_idx,
+        }
+
         slice_dir = (
             self.caps_directory
             / "subjects"
@@ -39,36 +50,20 @@ class CapsSlicesIXI(Dataset):
             / "deeplearning_prepare_data"
             / "slice_based"
         )
-        t1w_path = (
-            slice_dir
-            / "t1_linear"
-            / f"{participant}_ses-m000_T1w_space-MNI152NLin2009cSym_res-1x1x1_T1w_slice-axial_{slice_idx}.pt"
-        )
-        t2w_path = (
-            slice_dir
-            / "t2_linear"
-            / f"{participant}_ses-m000_T2w_space-MNI152NLin2009cSym_res-1x1x1_T2w_slice-axial_{slice_idx}.pt"
-        )
+        for sequence in self.sequence:
+            seq_path = (
+                slice_dir
+                / f"{sequence.lower()}_linear"
+                / f"{participant}_ses-m000_{sequence}w_space-MNI152NLin2009cSym_res-1x1x1_{sequence}w_slice-axial_{slice_idx}.pt"
+            )
+            try:
+                slice_tensor = torch.load(seq_path).unsqueeze(dim=0)
+            except:
+                raise ValueError(f"File {seq_path} does not exist.")
+            if self.transformations:
+                slice_tensor = self.transformations(slice_tensor)
+            data[sequence] = slice_tensor
 
-        try:
-            slice_t1w = torch.load(t1w_path).unsqueeze(dim=0)
-        except:
-            raise ValueError(f"File {t1w_path} does not exist.")
-        try:
-            slice_t2w = torch.load(t2w_path).unsqueeze(dim=0)
-        except:
-            raise ValueError(f"File {t2w_path} does not exist.")
-
-        if self.transformations:
-            slice_t1w = self.transformations(slice_t1w)
-            slice_t2w = self.transformations(slice_t2w)
-
-        data = {
-            "T1": slice_t1w,
-            "T2": slice_t2w,
-            "participant_id": participant,
-            "slice_id": slice_idx,
-        }
         return data
 
     def _get_meta_data(self, idx: int) -> Tuple[str, str, str, int, int]:
@@ -85,3 +80,33 @@ class CapsSlicesIXI(Dataset):
         participant = self.df.loc[image_idx, "participant_id"]
         slice_idx = (idx % self.elem_per_image) + self.slice_min
         return participant, slice_idx
+
+
+def get_datasets(caps_dir):
+    from torchvision import transforms
+
+    train_tsv = caps_dir / "IXI_train.tsv"
+    #val_tsv = caps_dir / "IXI_validation.tsv"
+
+    transform=transforms.Compose([
+        transforms.Pad([0, 18], fill=-1),
+        transforms.Resize((64, 64)),
+        #transforms.Lambda(lambda t: (t+1)/2),    # Image range between [0, 1]
+    ])
+
+    dataset_T1 = CapsSlicesIXI(
+        caps_dir,
+        train_tsv,
+        sequence='T1',
+        transformations=transform,
+    )
+    dataset_T2 = CapsSlicesIXI(
+        caps_dir,
+        train_tsv,
+        sequence='T2',
+        transformations=transform,
+    )
+    mean_final = torch.tensor(0.) # à vérifier
+    var_final = torch.tensor(1.) # à vérifier
+
+    return dataset_T1, dataset_T2, mean_final, var_final
