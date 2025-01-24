@@ -11,4 +11,4 @@
 
 module load pytorch-gpu/py3/2.3.0
 
-python main_dsb.py 29
+python main_dsb.py 34

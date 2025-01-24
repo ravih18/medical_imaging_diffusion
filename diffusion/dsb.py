@@ -415,6 +415,21 @@ class DiffusionSchrodingerBridge(nn.Module):
     def clear(self):
         torch.cuda.empty_cache()
 
+
+class IPF(DiffusionSchrodingerBridge):
+
+    def __init__(
+        self,
+        caps_directory: Path,
+        experiment_directory: Path,
+        transfer: bool,
+    ):
+        super(IPF, self).__init__(
+            caps_directory,
+            experiment_directory,
+            transfer
+        )
+
     def ipf_step(self, forward_or_backward, n):
         new_dl = None # why ?
         torch.cuda.empty_cache()
