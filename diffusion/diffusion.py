@@ -87,6 +87,7 @@ class DiffusionModel(nn.Module):
         best_val_loss = np.inf
         for epoch in range(epochs):
             train_loss = 0
+            print("="*10)
             print(f"Training epochs {epoch}/{epochs}")
             start_time = time.time()
             for step, batch in enumerate(trainloader):

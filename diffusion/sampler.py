@@ -1,7 +1,7 @@
 import torch
-
-from tqdm import tqdm
-
+from tqdm.notebook import tqdm
+from random import choice
+import matplotlib.pyplot as plt
 from .utils import extract
 
 
@@ -47,3 +47,15 @@ def p_sample_loop(diffusion_model, shape):
 @torch.no_grad()
 def sample(diffusion_model, image_size, batch_size=16, channels=3):
     return p_sample_loop(diffusion_model, shape=(batch_size, channels, image_size, image_size))
+
+@torch.no_grad()
+def save_sample(diffusion_model, image_size, n_images, channels, experiment_dir):
+    samples = sample(diffusion_model, image_size=image_size, batch_size=n_images, channels=channels)
+
+    fig, axs = plt.subplots(1, n_images, figsize=(2*n_images, 8))
+    for i in range(n_images):
+        axs[i].get_xaxis().set_visible(False)
+        axs[i].get_yaxis().set_visible(False)
+        axs[i].set_title(f"Image {i}")
+        axs[i].imshow(samples[-1][i].reshape(image_size, image_size, channels), cmap="gray")
+    fig.savefig(experiment_dir / "samples.pdf", format="pdf", bbox_inches="tight") 
