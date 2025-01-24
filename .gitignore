@@ -162,7 +162,8 @@ cython_debug/
 #.idea/
 
 # Images generated
-.gif
+*.gif
 
 # Experiments folder
 experiments/
+results/
