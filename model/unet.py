@@ -23,6 +23,18 @@ class Unet(nn.Module):
         n_block_klass = 2
     ):
         super().__init__()
+
+        self.locals = [
+            dim,
+            init_dim,
+            out_dim,
+            dim_mults,
+            channels,
+            self_condition,
+            resnet_block_groups,
+            n_block_klass,
+        ]
+
         # Determine the number of Resnet blocks
         self.n_block_klass = n_block_klass
         # determine dimensions
