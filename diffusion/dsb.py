@@ -146,7 +146,7 @@ class DiffusionSchrodingerBridge(nn.Module):
             plot_level = 1,
             img_dir=self.experiment_directory / 'imgs',
             gif_dir=self.experiment_directory / 'gifs',
-            )
+        )
         return plotter
 
     #def accelerate(self, forward_or_backward):
@@ -226,7 +226,7 @@ class DiffusionSchrodingerBridge(nn.Module):
     def build_dataloaders(self, data_param):
         from image_datasets.capsSlicesIXI import get_datasets
 
-        dataset_T1, dataset_T2, mean_final, var_final = get_datasets(self.caps_directory)
+        dataset_train_T1, dataset_train_T2, dataset_val_T1, dataset_val_T2, mean_final, var_final = get_datasets(self.caps_directory)
 
         self.mean_final = mean_final.to(self.device)
         self.var_final = var_final.to(self.device)
@@ -238,24 +238,39 @@ class DiffusionSchrodingerBridge(nn.Module):
         #     )
 
         save_init_dl = DataLoader(
-            dataset_T1,
+            dataset_train_T1,
             #worker_init_fn = worker_init_fn,
             **data_param.model_dump()
         )
         save_final_dl = DataLoader(
-            dataset_T2,
+            dataset_train_T2,
             #worker_init_fn = worker_init_fn,
             **data_param.model_dump()
         )
         cache_init_dl = DataLoader(
-            dataset_T1,
+            dataset_train_T1,
             batch_size = self.cache_batch_size,
             **data_param.model_dump(exclude={'batch_size'})
         )
         cache_final_dl = DataLoader(
-            dataset_T2,
+            dataset_train_T2,
             batch_size = self.cache_batch_size,
             **data_param.model_dump(exclude={'batch_size'})
+        )
+
+        val_init_dl = DataLoader(
+            dataset_val_T1,
+            batch_size=64,
+            shuffle=True,
+            num_workers=8,
+            drop_last=True,
+        )
+        val_final_dl = DataLoader(
+            dataset_val_T2,
+            batch_size=64,
+            shuffle=True,
+            num_workers=8,
+            drop_last=True,
         )
 
         #save_init_dl, save_final_dl, cache_init_dl, cache_final_dl = self.accelerator.prepare(
@@ -269,6 +284,8 @@ class DiffusionSchrodingerBridge(nn.Module):
         self.save_final_dl = repeater(save_final_dl)
         self.cache_init_dl = repeater(cache_init_dl)
         self.cache_final_dl = repeater(cache_final_dl)
+        self.val_init_dl = repeater(val_init_dl)
+        self.val_final_dl = repeater(val_final_dl)
 
     def new_cacheloader(self, forward_or_backward, n, use_ema=True):
         sample_direction = 'f' if forward_or_backward == 'b' else 'b'
@@ -351,10 +368,10 @@ class DiffusionSchrodingerBridge(nn.Module):
             with torch.no_grad():
                 #self.set_seed(seed=0 + self.accelerator.process_index)
                 if fb == 'f':
-                    batch = next(self.save_init_dl)['T1']
+                    batch = next(self.val_init_dl)['T1']
                     batch = batch.to(self.device)
                 elif self.transfer:
-                    batch = next(self.save_final_dl)['T2']
+                    batch = next(self.val_final_dl)['T2']
                     batch = batch.to(self.device)
                 else:
                     batch = self.mean_final + self.std_final * \

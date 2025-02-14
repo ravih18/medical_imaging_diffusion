@@ -86,7 +86,7 @@ def get_datasets(caps_dir):
     from torchvision import transforms
 
     train_tsv = caps_dir / "IXI_train.tsv"
-    #val_tsv = caps_dir / "IXI_validation.tsv"
+    val_tsv = caps_dir / "IXI_validation.tsv"
 
     transform=transforms.Compose([
         transforms.Pad([0, 18], fill=-1),
@@ -94,19 +94,32 @@ def get_datasets(caps_dir):
         #transforms.Lambda(lambda t: (t+1)/2),    # Image range between [0, 1]
     ])
 
-    dataset_T1 = CapsSlicesIXI(
+    dataset_train_T1 = CapsSlicesIXI(
         caps_dir,
         train_tsv,
         sequence='T1',
         transformations=transform,
     )
-    dataset_T2 = CapsSlicesIXI(
+    dataset_train_T2 = CapsSlicesIXI(
         caps_dir,
         train_tsv,
         sequence='T2',
         transformations=transform,
     )
+    dataset_val_T1 = CapsSlicesIXI(
+        caps_dir,
+        val_tsv,
+        sequence='T1',
+        transformations=transform
+    )
+    dataset_val_T2 = CapsSlicesIXI(
+        caps_dir,
+        val_tsv,
+        sequence='T2',
+        transformations=transform
+    )
+
     mean_final = torch.tensor(0.) # à vérifier
     var_final = torch.tensor(1.) # à vérifier
 
-    return dataset_T1, dataset_T2, mean_final, var_final
+    return dataset_train_T1, dataset_train_T2, dataset_val_T1, dataset_val_T2, mean_final, var_final
