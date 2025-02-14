@@ -1,0 +1,35 @@
+[Ipf]
+n_ipf = 10
+use_prev_net = true
+num_steps = 10
+gamma_space = 'linspace'
+gamma_min = 0.01
+gamma_max = 0.01
+num_cache_batches = 1 # A checker
+cache_batch_size = 300
+cache_refresh_stride = 100
+
+[Training]
+batch_size = 64
+lr = 0.0001
+num_iter = 10000 # 50000
+#epochs = 50
+ema = true
+ema_rate = 0.999
+grad_clipping = true
+grad_clip = 1.0
+
+[Data]
+batch_size = 64
+shuffle = true
+num_workers = 8
+pin_memory = true
+prefetch_factor = 2
+drop_last = true
+
+[Unet]
+dim = 64
+channels = 1
+dim_mults = [1, 2, 2]
+resnet_block_groups = 4
+n_block_klass = 2
