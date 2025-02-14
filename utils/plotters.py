@@ -2,6 +2,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import matplotlib
+import matplotlib.animation as animation
 import torch
 import torchvision.utils as vutils
 from PIL import Image
@@ -62,6 +63,28 @@ def make_gif(plot_paths, output_directory='./gif', gif_name='gif'):
                    save_all=True,
                    duration=100,
                    loop=0)
+
+
+def save_gif(x_tot_plot, fps, gif_path):
+    #print(x_tot_plot.shape)
+    N_frame=x_tot_plot.shape[0]
+    fig, ax = plt.subplots()
+    img = x_tot_plot[0][0].squeeze().cpu()
+    im = ax.imshow(img, cmap='grey', vmin=-1, vmax=1)
+
+    def update(i):
+        # Load the ith image
+        if i < N_frame:
+            img = x_tot_plot[i][0].squeeze().cpu()
+        else:
+            img = x_tot_plot[-1][0].squeeze().cpu()
+        im.set_array(img)
+        return [im]
+
+    ani = animation.FuncAnimation(fig, update, frames=N_frame + 2*fps, blit=True)
+    ani.save(gif_path, writer='pillow', fps=fps) 
+    print('saved gif')
+ 
 
 def save_sequence(num_steps, x, name='', img_dir='./img', gif_dir = './gif', xlim=None, ylim=None, ipf_it=None, freq=1):
     if not os.path.isdir(img_dir):
@@ -201,6 +224,11 @@ class ImPlotter(object):
                 filename_grid_png = os.path.join(img_dir, 'im_grid_final.png')
                 #vutils.save_image(x_tot_plot[-1], filename_grid_png, nrow=10)
                 save_64_images_10_columns(x_tot_plot[-1].detach().cpu().numpy(), filename_grid_png)
+                save_gif(
+                    x_tot_plot,
+                    fps=4,
+                    gif_path=self.gif_dir / f"traj_{forward_or_backward}_{n}_{i}_path.gif"
+                )
 
             if self.plot_level >= 2:
                 plt.clf()
