@@ -41,10 +41,10 @@ class CacheLoader(Dataset):
             for b in range(num_batches):
 
                 if fb == 'b':
-                    batch = next(dataloader_b)['T1']
+                    batch = next(dataloader_b)['image']
                     batch = batch.to(device)
                 elif fb == 'f' and transfer:
-                    batch = next(dataloader_f)['T2']
+                    batch = next(dataloader_f)['image']
                     batch = batch.to(device)
                 else:
                     batch = mean + std * \

@@ -93,8 +93,8 @@ class DiffusionModel(nn.Module):
             for step, batch in enumerate(trainloader):
                 optimizer.zero_grad()
 
-                batch_size = batch["T1"].shape[0]
-                batch = batch["T1"].to(torch.float).to(self.device)
+                batch_size = batch["image"].shape[0]
+                batch = batch["image"].to(torch.float).to(self.device)
 
                 t = torch.randint(0, self.timesteps, (batch_size,), device=self.device).long()
 
@@ -110,7 +110,7 @@ class DiffusionModel(nn.Module):
                 val_loss = 0
                 with torch.no_grad():
                     for _, batch in enumerate(valloader):
-                        batch = batch["T1"].to(torch.float).to(self.device)
+                        batch = batch["image"].to(torch.float).to(self.device)
 
                         t = torch.randint(0, self.timesteps, (batch_size,), device=self.device).long()
                         
@@ -144,7 +144,7 @@ class DiffusionModel(nn.Module):
         for t in tqdm(range(0, self.timesteps, psnr_step)):
             loss_accumulated = 0
             for step, batch in enumerate(dataloader):
-                batch = batch["T1"].to(torch.float).to(self.device)
+                batch = batch["image"].to(torch.float).to(self.device)
                 
                 t_tensor = torch.full_like(batch, t, device=self.device).long()
 
