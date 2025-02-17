@@ -11,7 +11,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-#from accelerate import Accelerator
 from torch.profiler import profile, tensorboard_trace_handler, ProfilerActivity, schedule
 import gc
 
@@ -19,32 +18,25 @@ from .langevin import Langevin
 from model.ema import EMAHelper
 from image_datasets.cacheloader import CacheLoader
 from image_datasets import repeater
-
-def print_memory_usage(message):
-    print(message)
-    print(f"  Allocated Memory: {torch.cuda.memory_allocated() / 1024 ** 2:.2f} MB")
-    #print(f"  Reserved Memory: {torch.cuda.memory_reserved() / 1024 ** 2:.2f} MB")
-
-# Function to print parameter differences
-def print_param_diff(model, prev_params):
-    for name, param in model.named_parameters():
-        diff = param.data - prev_params[name]
-        print(f"Parameter: {name}, Difference: {diff.norm().item():.6f}")
+from utils.config import DsbConfig
+from utils import print_memory_usage, print_param_diff
 
 
 class DiffusionSchrodingerBridge(nn.Module):
     def __init__(
         self,
-        caps_directory: Path,
+        #caps_directory: Path,
         experiment_directory: Path,
+        dsb_params: DsbConfig,
+        datasets: dict,
         transfer: bool,
     ):
         super(DiffusionSchrodingerBridge, self).__init__()
 
-        self.caps_directory = caps_directory
-        self.experiment_directory, dsb_params = self.init_expe(experiment_directory)
+        #self.caps_directory = caps_directory
+        self.experiment_directory = experiment_directory
         self.transfer = transfer
-        #dsb_params = self.get_params()
+        self.init_expe(experiment_directory)
 
         #self.accelerator = Accelerator(mixed_precision="fp16", cpu=(not torch.cuda.is_available()))
         #self.device = self.accelerator.device
@@ -77,7 +69,8 @@ class DiffusionSchrodingerBridge(nn.Module):
         self.build_optimizers()
 
         # get dataloaders
-        self.build_dataloaders(dsb_params.data_param)
+        #self.build_dataloaders(dsb_params.data_param)
+        self.build_dataloaders(datasets, dsb_params.data_param)
 
          # get loggers
         self.logger = self.get_logger()
@@ -96,7 +89,7 @@ class DiffusionSchrodingerBridge(nn.Module):
         prob_vec = gammas * 0 + 1 # no weight distrib
         time_sampler = torch.distributions.categorical.Categorical(prob_vec)
 
-        shape = next(self.save_init_dl)['T1'][0].shape
+        shape = next(self.save_init_dl)['image'][0].shape
         self.shape = shape
         self.langevin = Langevin(
             self.num_steps,
@@ -118,17 +111,11 @@ class DiffusionSchrodingerBridge(nn.Module):
         self.dataparallel = False
 
     def init_expe(self, experiment_directory: Path):
-        from utils.config import dsb_config_from_toml
-        
-        dsb_param = dsb_config_from_toml(experiment_directory / "config.toml")
-
         # Make logs, img/gifs, checkpoints directory
         (experiment_directory / "logs").mkdir(parents = True, exist_ok = True)
         (experiment_directory / "imgs").mkdir(parents = True, exist_ok = True)
         (experiment_directory / "gifs").mkdir(parents = True, exist_ok = True)
         (experiment_directory / "checkpoints").mkdir(parents = True, exist_ok = True)
-
-        return experiment_directory, dsb_param
 
     def get_logger(self, name='logs'):
         from utils.logger import CSVLogger
@@ -223,14 +210,14 @@ class DiffusionSchrodingerBridge(nn.Module):
         optimizer_f = Adam(self.net['f'].parameters(), lr=self.lr)
         self.optimizer = {'f': optimizer_f, 'b': optimizer_b}
 
-    def build_dataloaders(self, data_param):
-        from image_datasets.capsSlicesIXI import get_datasets
+    def build_dataloaders(self, datasets, data_param):
+        #from image_datasets.capsSlicesIXI import get_datasets
 
-        dataset_train_T1, dataset_train_T2, dataset_val_T1, dataset_val_T2, mean_final, var_final = get_datasets(self.caps_directory)
+        #dataset_train_T1, dataset_train_T2, dataset_val_T1, dataset_val_T2, mean_final, var_final = get_datasets(self.caps_directory)
 
-        self.mean_final = mean_final.to(self.device)
-        self.var_final = var_final.to(self.device)
-        self.std_final = torch.sqrt(var_final).to(self.device)
+        self.mean_final = torch.tensor(0.).to(self.device) # à vérifier
+        self.var_final = torch.tensor(1.).to(self.device) # à vérifier
+        self.std_final = torch.sqrt(self.var_final).to(self.device)
 
         # def worker_init_fn(worker_id):
         #     np.random.seed(
@@ -238,35 +225,35 @@ class DiffusionSchrodingerBridge(nn.Module):
         #     )
 
         save_init_dl = DataLoader(
-            dataset_train_T1,
+            datasets["train_init"],
             #worker_init_fn = worker_init_fn,
             **data_param.model_dump()
         )
         save_final_dl = DataLoader(
-            dataset_train_T2,
+            datasets["train_final"],
             #worker_init_fn = worker_init_fn,
             **data_param.model_dump()
         )
         cache_init_dl = DataLoader(
-            dataset_train_T1,
+            datasets["train_init"],
             batch_size = self.cache_batch_size,
             **data_param.model_dump(exclude={'batch_size'})
         )
         cache_final_dl = DataLoader(
-            dataset_train_T2,
+            datasets["train_final"],
             batch_size = self.cache_batch_size,
             **data_param.model_dump(exclude={'batch_size'})
         )
 
         val_init_dl = DataLoader(
-            dataset_val_T1,
+            datasets["val_init"],
             batch_size=64,
             shuffle=True,
             num_workers=8,
             drop_last=True,
         )
         val_final_dl = DataLoader(
-            dataset_val_T2,
+            datasets["val_final"],
             batch_size=64,
             shuffle=True,
             num_workers=8,
@@ -368,10 +355,10 @@ class DiffusionSchrodingerBridge(nn.Module):
             with torch.no_grad():
                 #self.set_seed(seed=0 + self.accelerator.process_index)
                 if fb == 'f':
-                    batch = next(self.val_init_dl)['T1']
+                    batch = next(self.val_init_dl)['image']
                     batch = batch.to(self.device)
                 elif self.transfer:
-                    batch = next(self.val_final_dl)['T2']
+                    batch = next(self.val_final_dl)['image']
                     batch = batch.to(self.device)
                 else:
                     batch = self.mean_final + self.std_final * \
@@ -437,14 +424,16 @@ class IPF(DiffusionSchrodingerBridge):
 
     def __init__(
         self,
-        caps_directory: Path,
         experiment_directory: Path,
+        dsb_params: DsbConfig,
+        datasets: dict,
         transfer: bool,
     ):
         super(IPF, self).__init__(
-            caps_directory,
             experiment_directory,
-            transfer
+            dsb_params,
+            datasets,
+            transfer,
         )
 
     def ipf_step(self, forward_or_backward, n):
@@ -543,7 +532,7 @@ class IPF(DiffusionSchrodingerBridge):
         It seems like it is mainly to make a plot in the original implementation
         """
         #if self.accelerator.is_local_main_process:
-        init_sample = next(self.save_init_dl)['T1']
+        init_sample = next(self.save_init_dl)['image']
         init_sample = init_sample.to(self.device)
         x_tot, _, _ = self.langevin.record_init_langevin(init_sample)
         shape_len = len(x_tot.shape)
