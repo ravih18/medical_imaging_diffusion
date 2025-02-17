@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 
+CAPS_IXI = Path("/lustre/fswork/projects/rech/krk/commun/datasets/IXI/caps_IXI")
+
+
 class CapsSlicesIXI(Dataset):
     """"""
     def __init__(
@@ -82,11 +85,11 @@ class CapsSlicesIXI(Dataset):
         return participant, slice_idx
 
 
-def get_datasets(caps_dir):
+def get_IXI_datasets(caps_dir):
     from torchvision import transforms
 
-    train_tsv = caps_dir / "IXI_train.tsv"
-    val_tsv = caps_dir / "IXI_validation.tsv"
+    train_tsv = CAPS_IXI / "IXI_train.tsv"
+    val_tsv = CAPS_IXI / "IXI_validation.tsv"
 
     transform=transforms.Compose([
         transforms.Pad([0, 18], fill=-1),
@@ -95,31 +98,35 @@ def get_datasets(caps_dir):
     ])
 
     dataset_train_T1 = CapsSlicesIXI(
-        caps_dir,
+        CAPS_IXI,
         train_tsv,
         sequence='T1',
         transformations=transform,
     )
     dataset_train_T2 = CapsSlicesIXI(
-        caps_dir,
+        CAPS_IXI,
         train_tsv,
         sequence='T2',
         transformations=transform,
     )
     dataset_val_T1 = CapsSlicesIXI(
-        caps_dir,
+        CAPS_IXI,
         val_tsv,
         sequence='T1',
         transformations=transform
     )
     dataset_val_T2 = CapsSlicesIXI(
-        caps_dir,
+        CAPS_IXI,
         val_tsv,
         sequence='T2',
         transformations=transform
     )
 
-    mean_final = torch.tensor(0.) # à vérifier
-    var_final = torch.tensor(1.) # à vérifier
+    datasets = {
+        "train_init": dataset_train_T1,
+        "train_final": dataset_train_T2,
+        "val_init": dataset_val_T1,
+        "val_final": dataset_val_T2,
+    }
 
-    return dataset_train_T1, dataset_train_T2, dataset_val_T1, dataset_val_T2, mean_final, var_final
+    return datasets
