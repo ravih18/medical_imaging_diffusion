@@ -1,7 +1,6 @@
-import json
 from pathlib import Path
-import time
-import datetime
+#import time
+#import datetime
 from tqdm import tqdm
 
 import random
@@ -30,10 +29,10 @@ class DiffusionSchrodingerBridge(nn.Module):
         dsb_params: DsbConfig,
         datasets: dict,
         transfer: bool,
+        evaluation: bool = False,
     ):
         super(DiffusionSchrodingerBridge, self).__init__()
 
-        #self.caps_directory = caps_directory
         self.experiment_directory = experiment_directory
         self.transfer = transfer
         self.init_expe(experiment_directory)
@@ -71,8 +70,8 @@ class DiffusionSchrodingerBridge(nn.Module):
         # get dataloaders
         #self.build_dataloaders(dsb_params.data_param)
         self.build_dataloaders(datasets, dsb_params.data_param)
-
-         # get loggers
+    
+        # get loggers
         self.logger = self.get_logger()
         self.save_logger = self.get_logger('plot_logs')
         self.plotter = self.get_plotter()
@@ -102,8 +101,8 @@ class DiffusionSchrodingerBridge(nn.Module):
         )
 
         # checkpoint
-        date = str(datetime.datetime.now())[0:10]
-        self.name_all = date
+        # date = str(datetime.datetime.now())[0:10]
+        # self.name_all = date
 
         self.checkpoint_it = 1
         self.checkpoint_pass = 'b'
@@ -176,7 +175,7 @@ class DiffusionSchrodingerBridge(nn.Module):
         #     "num_heads_upsample": -1,
         #     "use_scale_shift_norm": True
         # }
-        # net_f, net_b = UNetModel(**kwargs), UNetModel(**kwargs)  
+        # net_f, net_b = UNetModel(**kwargs), UNetModel(**kwargs)
 
         if forward_or_backward is None:
             net_f = net_f.to(self.device)
@@ -211,18 +210,10 @@ class DiffusionSchrodingerBridge(nn.Module):
         self.optimizer = {'f': optimizer_f, 'b': optimizer_b}
 
     def build_dataloaders(self, datasets, data_param):
-        #from image_datasets.capsSlicesIXI import get_datasets
-
-        #dataset_train_T1, dataset_train_T2, dataset_val_T1, dataset_val_T2, mean_final, var_final = get_datasets(self.caps_directory)
 
         self.mean_final = torch.tensor(0.).to(self.device) # à vérifier
         self.var_final = torch.tensor(1.).to(self.device) # à vérifier
         self.std_final = torch.sqrt(self.var_final).to(self.device)
-
-        # def worker_init_fn(worker_id):
-        #     np.random.seed(
-        #         np.random.get_state()[1][0] + worker_id + self.accelerator.process_index
-        #     )
 
         save_init_dl = DataLoader(
             datasets["train_init"],
@@ -321,6 +312,26 @@ class DiffusionSchrodingerBridge(nn.Module):
         new_dl = repeater(new_dl)
 
         return new_dl
+
+    def load_checkpoints(self, i, n, fb=None):
+        if (fb=='f') or (not fb):
+            self.ema_helpers["f"].load_state_dict(torch.load(
+                self.experiment_directory / "checkpoints" / f"sample_net_f_{i}_{n}.ckpt"
+            ))
+        if (fb=='b') or (not fb):
+            self.ema_helpers["b"].load_state_dict(torch.load(
+                self.experiment_directory / "checkpoints" / f"sample_net_b_{i}_{n}.ckpt"
+            ))
+
+    def sample_batch(self, batch, fb):
+        with torch.no_grad():
+            x_tot, _, _ = self.langevin.record_langevin_seq(
+                self.ema_helpers[fb].ema_copy(self.net[fb]),
+                #dsb.net[fb],
+                batch.to(self.device),
+                sample=True
+            )
+        return x_tot
 
     def save_step(self, i, n, fb):
         #if self.accelerator.is_local_main_process:
