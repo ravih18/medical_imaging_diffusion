@@ -166,4 +166,5 @@ cython_debug/
 
 # Experiments folder
 experiments/
+experiments_dsbm/
 results/
