@@ -11,4 +11,4 @@
 
 module load pytorch-gpu/py3/2.3.0
 
-python main_dsb.py 34
+python main_dsb.py $1 ADNI_AD_CN

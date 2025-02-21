@@ -1,4 +1,3 @@
-import toml
 from pathlib import Path
 import argparse
 from utils.config import *
@@ -16,19 +15,23 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-expe_dir = Path(f"experiments/{task}/dsb{args.model_number}")
+expe_dir = Path(f"experiments/{args.task}/dsb{args.model_number}")
 print(f"Working dir : {expe_dir}")
-dsb_param = dsb_config_from_toml(experiment_directory / "config.toml")
+dsb_param = dsb_config_from_toml(expe_dir / "config.toml")
+
+img_size = 128
+
+print(f"Working with images of size {img_size}")
 
 if args.task == 'IXI':
-    from image_dataset.CapsSlicesIXI import get_IXI_datasets
+    from image_datasets.capsSlicesIXI import get_IXI_datasets
     datasets = get_IXI_datasets()
 elif args.task == 'ADNI_T1_PET':
-    from image_dataset.CapsSlicesADNI import get_ADNI_datasets
-    datasets = get_ADNI_datasets(args.task)
+    from image_datasets.capsSlicesADNI import get_ADNI_datasets
+    datasets = get_ADNI_datasets(args.task, img_size = img_size)
 elif args.task == 'ADNI_AD_CN':
-    from image_dataset.CapsSlicesADNI import get_ADNI_datasets
-    datasets = get_ADNI_datasets(args.task)
+    from image_datasets.capsSlicesADNI import get_ADNI_datasets
+    datasets = get_ADNI_datasets(args.task, img_size = img_size)
 elif args.task == 'BRATS':
     pass
 
