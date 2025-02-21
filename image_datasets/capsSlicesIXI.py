@@ -15,11 +15,13 @@ class CapsSlicesIXI(Dataset):
         self,
         caps_directory: Path,
         subject_tsv: Path,
-        sequence: Optional[str]=None,
+        sequence: str = None,
         transformations: Optional[Callable]=None,
     ):
         self.caps_directory = Path(caps_directory)
         self.df = pd.read_csv(subject_tsv, sep='\t', )
+
+        self.sequence = sequence
 
         self.slice_min = 80
         self.slice_max = 110
@@ -27,13 +29,7 @@ class CapsSlicesIXI(Dataset):
 
         self.transformations = transformations
 
-        if sequence is not None:
-            if (sequence != 'T1') and (sequence != 'T2'):
-                raise ValueError("Invalid value for sequence argument. Sequence must be 'T1' or 'T2'.")
-            self.sequence = [sequence]
-        else:
-            self.sequence = ['T1', 'T2']
-        self.size = self[0][self.sequence[0]].size()
+        self.size = self[0]["image"].size()
 
     def __len__(self) -> int:
         return len(self.df) * self.elem_per_image
@@ -53,19 +49,18 @@ class CapsSlicesIXI(Dataset):
             / "deeplearning_prepare_data"
             / "slice_based"
         )
-        for sequence in self.sequence:
-            seq_path = (
-                slice_dir
-                / f"{sequence.lower()}_linear"
-                / f"{participant}_ses-m000_{sequence}w_space-MNI152NLin2009cSym_res-1x1x1_{sequence}w_slice-axial_{slice_idx}.pt"
-            )
-            try:
-                slice_tensor = torch.load(seq_path).unsqueeze(dim=0)
-            except:
-                raise ValueError(f"File {seq_path} does not exist.")
-            if self.transformations:
-                slice_tensor = self.transformations(slice_tensor)
-            data[sequence] = slice_tensor
+        seq_path = (
+            slice_dir
+            / f"{self.sequence.lower()}_linear"
+            / f"{participant}_ses-m000_{self.sequence}w_space-MNI152NLin2009cSym_res-1x1x1_{self.sequence}w_slice-axial_{slice_idx}.pt"
+        )
+        try:
+            slice_tensor = torch.load(seq_path).unsqueeze(dim=0)
+        except:
+            raise ValueError(f"File {seq_path} does not exist.")
+        if self.transformations:
+            slice_tensor = self.transformations(slice_tensor)
+        data["image"] = slice_tensor
 
         return data
 
@@ -85,7 +80,7 @@ class CapsSlicesIXI(Dataset):
         return participant, slice_idx
 
 
-def get_IXI_datasets(caps_dir):
+def get_IXI_datasets():
     from torchvision import transforms
 
     train_tsv = CAPS_IXI / "IXI_train.tsv"

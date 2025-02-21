@@ -2,6 +2,7 @@ import json
 import numpy as np
 import pandas as pd
 import torch
+import copy
 from torch.utils.data import Dataset
 from torchvision import transforms
 from pathlib import Path
@@ -9,90 +10,7 @@ from typing import Callable, Optional, Tuple
 
 
 CAPS_ADNI = Path("/lustre/fswork/projects/rech/krk/commun/datasets/adni/caps/caps_pet_uniform_v2025")
-#CAPS_ADNI = Path("/lustre/fswork/projects/rech/krk/commun/datasets/adni/caps/caps_pet_uniform")
 
-# class CapsDatasetSlice_hr(CapsDataset):
-#     """Dataset of MRI organized in a CAPS folder."""
-
-#     def __init__(
-#         self,
-#         caps_directory: Path,
-#         tsv_label: Path,
-#         preprocessing_dict: Dict[str, Any],
-#         index_slices : List,
-#         train_transformations: Optional[Callable] = None,
-#         label_presence: bool = True,
-#         label: str = None,
-#         label_code: Dict[str, int] = None,
-#         all_transformations: Optional[Callable] = None,
-#         transforms_slice = None
-#     ):
-#         """
-#         Args:
-#             caps_directory: Directory of all the images.
-#             data_file: Path to the tsv file or DataFrame containing the subject/session list.
-#             preprocessing_dict: preprocessing dict contained in the JSON file of prepare_data.
-#             train_transformations: Optional transform to be applied only on training mode.
-#             label_presence: If True the diagnosis will be extracted from the given DataFrame.
-#             label: Name of the column in data_df containing the label.
-#             label_code: label code that links the output node number to label value.
-#             all_transformations: Optional transform to be applied during training and evaluation.
-#             multi_cohort: If True caps_directory is the path to a TSV file linking cohort names and paths.
-
-#         """
-#         self.n_slices = len(index_slices)
-#         self.index_slices = index_slices
-#         self.mode = "slice"
-#         self.transforms_slice = transforms_slice
-#         super().__init__(
-#             caps_directory,
-#             tsv_label,
-#             preprocessing_dict,
-#             augmentation_transformations=train_transformations,
-#             label_presence=label_presence,
-#             label=label,
-#             label_code=label_code,
-#             transformations=all_transformations,
-#         )
-        
-#         self.prepare_dl = self.preprocessing_dict["prepare_dl"]
-
-#     @property
-#     def elem_index(self):
-#         return None
-
-#     def __getitem__(self, idx):
-#         participant, session, elem_idx, label, domain = self._get_meta_data(idx)
-
-#         image_path = self._get_image_path(participant, session)
-#         image = torch.load(image_path)
-
-#         if self.transformations:
-#             image = self.transformations(image)
-
-#         if self.augmentation_transformations and not self.eval_mode:
-#             image = self.augmentation_transformations(image)
-        
-#         slice_index = self.index_slices[elem_idx]
-#         image = image[:,:,:,slice_index]
-
-#         if self.transforms_slice is not None:
-#             image = self.transforms_slice(image)
-
-#         sample = {
-#             "image": image ,
-#             "label": label,
-#             "participant_id": participant,
-#             "session_id": session,
-#             "image_id": 0,
-#             "image_path": image_path.as_posix(),
-#             "domain": domain,
-#         }
-
-#         return sample
-
-#     def num_elem_per_image(self):
-#         return self.n_slices
 
 class CapsSliceADNI(Dataset):
     def __init__(
@@ -102,6 +20,8 @@ class CapsSliceADNI(Dataset):
         subject_tsv: Path,
         image_transformations: Optional[Callable]=None,
         slice_transformations: Optional[Callable]=None,
+        return_hypo: bool = False,
+        label_transformations: Optional[Callable]=None,
     ):
         self.caps_directory = Path(caps_directory)
         self.df = pd.read_csv(subject_tsv, sep='\t', )
@@ -116,6 +36,11 @@ class CapsSliceADNI(Dataset):
 
         self.image_transformations = image_transformations
         self.slice_transformations = slice_transformations
+
+        self.return_hypo = return_hypo
+        if self.return_hypo:
+            self.label_transformations = label_transformations
+
         self.size = self[0]['image'].size()
 
     def __len__(self) -> int:
@@ -123,7 +48,7 @@ class CapsSliceADNI(Dataset):
 
     def __getitem__(self, idx):
         participant, session, slice_idx = self._get_meta_data(idx)
-        #print(participant, session)
+
         data = {
             "participant_id": participant,
             "session_id": session,
@@ -140,18 +65,26 @@ class CapsSliceADNI(Dataset):
             / f"{self.modality.lower()}_linear"
             / f"{participant}_{session}{self.file_pattern}"
         )
-        try:
-            image = torch.load(image_path)
-        except:
-            raise ValueError(f"File {image_path} does not exist.")
-        
+        image = torch.load(image_path)
+        if self.return_hypo:
+                label = copy.deepcopy(image)
+
         if self.image_transformations:
             image = self.image_transformations(image)
         slice_tensor = image[:,:,:,slice_idx]
+
         if self.slice_transformations:
             slice_tensor = self.slice_transformations(slice_tensor)
-
         data["image"] = slice_tensor
+
+        if self.return_hypo:
+            if self.label_transformations:
+                label = self.label_transformations(label)
+            slice_label = label[:,:,:,slice_idx]
+            if self.slice_transformations:
+                slice_label = self.slice_transformations(slice_label)
+            data["label"] = slice_label
+
         return data
 
     def _get_meta_data(self, idx: int) -> Tuple[str, str, str, int, int]:
@@ -177,13 +110,13 @@ class CapsSliceADNI(Dataset):
             preprocessing_dict = json.load(file)
         if preprocessing_dict["preprocessing"] == "pet-linear":
             modality = "PET"
-        elif preprocessing_dict["preprocessing"] == "t1-linear":
-            modality = "T1w"
+        elif preprocessing_dict["preprocessing"] == "t1w-linear":
+            modality = "T1"
         
         pattern = preprocessing_dict["file_type"]["pattern"].split("*")[1].split('.')[0] + ".pt"
         return modality, pattern
 
-def get_ADNI_datasets(task):
+def get_ADNI_datasets(task, img_size=64):
     
     #indexes = list(range(64-10,64+10))
 
@@ -194,86 +127,190 @@ def get_ADNI_datasets(task):
         transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
     ])
     slice_transformations = transforms.Compose([
-       transforms.Resize((64, 64)),
+        # transforms.Pad([0, 19], fill=-1),
+        transforms.Resize((img_size, img_size)),
     ])
 
     train_cn_tsv = CAPS_ADNI / "splits_dsb" / "train_cn.tsv"
     val_cn_tsv = CAPS_ADNI / "splits_dsb" / "validation_cn_baseline.tsv"
     
-    if task == "ADNI_T1_PET":
-        t1_preprocessing_json = CAPS_ADNI / "preprocessing_json" / "extract_t1w_slice.json"
-        # transforms_t1w = transforms.Compose([
-        #     transforms.Resize((64, 64)),
-        #     transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
-        # ])
+    # if task == "ADNI_T1_PET":
+    #     t1_preprocessing_json = CAPS_ADNI / "preprocessing_json" / "extract_t1w_slice.json"
+    #     # transforms_t1w = transforms.Compose([
+    #     #     transforms.Resize((64, 64)),
+    #     #     transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
+    #     # ])
 
-        dataset_train_init = CapsSliceADNI(
-            CAPS_ADNI,
-            t1_preprocessing_json,
-            train_cn_tsv,
-            image_transformations=image_transformations,
-            slice_transformations=slice_transformations,
-        )
-        dataset_train_final = CapsSliceADNI(
-            CAPS_ADNI,
-            pet_preprocessing_json,
-            train_cn_tsv,
-            image_transformations=image_transformations,
-            slice_transformations=slice_transformations,
-        )
-        dataset_val_init = CapsSliceADNI(
-            CAPS_ADNI,
-            t1_preprocessing_json,
-            val_cn_tsv,
-            image_transformations=image_transformations,
-            slice_transformations=slice_transformations,
-        )
-        dataset_val_final = CapsSliceADNI(
-            CAPS_ADNI,
-            pet_preprocessing_json,
-            val_cn_tsv,
-            image_transformations=image_transformations,
-            slice_transformations=slice_transformations,
-        )
+    #     dataset_train_init = CapsSliceADNI(
+    #         CAPS_ADNI,
+    #         t1_preprocessing_json,
+    #         train_cn_tsv,
+    #         image_transformations=image_transformations,
+    #         slice_transformations=slice_transformations,
+    #     )
+    #     dataset_train_final = CapsSliceADNI(
+    #         CAPS_ADNI,
+    #         pet_preprocessing_json,
+    #         train_cn_tsv,
+    #         image_transformations=image_transformations,
+    #         slice_transformations=slice_transformations,
+    #     )
+    #     dataset_val_init = CapsSliceADNI(
+    #         CAPS_ADNI,
+    #         t1_preprocessing_json,
+    #         val_cn_tsv,
+    #         image_transformations=image_transformations,
+    #         slice_transformations=slice_transformations,
+    #     )
+    #     dataset_val_final = CapsSliceADNI(
+    #         CAPS_ADNI,
+    #         pet_preprocessing_json,
+    #         val_cn_tsv,
+    #         image_transformations=image_transformations,
+    #         slice_transformations=slice_transformations,
+    #     )
 
-    elif task == "ADNI_AD_CN":
-        train_ad_tsv = CAPS_ADNI / "splits_dsb" / "train_ad.tsv"
-        val_ad_tsv = CAPS_ADNI / "splits_dsb" / "validation_ad_baseline.tsv"
+    # elif task == "ADNI_AD_CN":
+    train_ad_tsv = CAPS_ADNI / "splits_dsb" / "train_ad.tsv"
+    val_ad_tsv = CAPS_ADNI / "splits_dsb" / "validation_ad_baseline.tsv"
 
-        dataset_train_init = CapsSliceADNI(
-            CAPS_ADNI,
-            pet_preprocessing_json,
-            train_ad_tsv,
-            image_transformations=image_transformations,
-            slice_transformations=slice_transformations,
-        )
-        dataset_train_final = CapsSliceADNI(
-            CAPS_ADNI,
-            pet_preprocessing_json,
-            train_cn_tsv,
-            image_transformations=image_transformations,
-            slice_transformations=slice_transformations,
-        )
-        dataset_val_init = CapsSliceADNI(
-            CAPS_ADNI,
-            pet_preprocessing_json,
-            val_ad_tsv,
-            image_transformations=image_transformations,
-            slice_transformations=slice_transformations,
-        )
-        dataset_val_final = CapsSliceADNI(
-            CAPS_ADNI,
-            pet_preprocessing_json,
-            val_cn_tsv,
-            image_transformations=image_transformations,
-            slice_transformations=slice_transformations,
-        )
+    dataset_train_init = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        #train_ad_tsv,
+        train_cn_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+    dataset_train_final = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        #train_cn_tsv,
+        train_ad_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+    dataset_val_init = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        #val_ad_tsv,
+        val_cn_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+    dataset_val_final = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        #val_cn_tsv,
+        val_ad_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+
+    # mean_final = torch.zeros([1, img_size, img_size])
+    # var_final = 1 * torch.ones([1, img_size, img_size])
 
     datasets = {
         "train_init": dataset_train_init,
         "train_final": dataset_train_final,
         "val_init": dataset_val_init,
         "val_final": dataset_val_final,
+        #"mean_final": mean_final,
+        #"var_final": var_final,
     }
 
     return datasets
+
+
+def get_ADNI_validation(img_size=64):
+    caps_hypo = Path("/lustre/fswork/projects/rech/krk/commun/datasets/adni/caps/hypometabolic_caps/caps_ad_30")
+    val_cn_tsv = CAPS_ADNI / "splits_dsb" / "validation_cn_baseline.tsv"
+    #val_ad_tsv = CAPS_ADNI / "splits_dsb" / "validation_ad_baseline.tsv"
+    val_hypo_tsv = Path("/lustre/fswork/projects/rech/krk/commun/datasets/adni/splits_dsb/validation_hypo.tsv")
+
+    pet_preprocessing_json = CAPS_ADNI / "preprocessing_json" / "extract_pet_uniform_slice.json" # v2025
+    pet_hypo_json = caps_hypo / "tensor_extraction" / "extract_pet_uniform_image.json"
+
+    image_transformations = transforms.Compose([
+        transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
+    ])
+    slice_transformations = transforms.Compose([
+       transforms.Resize((img_size, img_size)),
+    ])
+
+    dataset_val_init = CapsSliceADNI(
+        caps_hypo,
+        pet_hypo_json,
+        val_hypo_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+    dataset_val_final = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        val_cn_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+
+    return dataset_val_init, dataset_val_final
+
+
+def get_dataset_val_hypo(img_size=64, pathology="AD", percentage=30, test=False):
+
+    if test == True:
+        val_tsv = CAPS_ADNI / "splits_dsb" / "test_cn_baseline.tsv"
+    else:
+        val_tsv = CAPS_ADNI / "splits_dsb" / "validation_cn_baseline.tsv"
+
+    pet_preprocessing_json = CAPS_ADNI / "preprocessing_json" / "extract_pet_uniform_slice.json"
+
+    image_transformations = transforms.Compose([
+        SimulateHypometabolic(pathology=pathology, percentage=percentage),
+        transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
+    ])
+    label_transformations = transforms.Compose([
+        transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
+    ])
+    slice_transformations = transforms.Compose([
+       transforms.Resize((img_size, img_size)),
+    ])
+
+    dataset_val_hypo = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        val_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+        return_hypo=True,
+        label_transformations=label_transformations,
+    )
+    return dataset_val_hypo
+
+
+class SimulateHypometabolic(torch.nn.Module):
+    def __init__(self, pathology: str, percentage: int, sigma: int = 5):
+        import nibabel as nib
+
+        super(SimulateHypometabolic, self).__init__()
+
+        self.pathology = pathology
+        self.percentage = percentage
+        self.sigma = sigma
+
+        mask_path = CAPS_ADNI / "masks" / f"mask_hypo_{self.pathology.lower()}_resampled.nii"
+        mask_nii = nib.load(mask_path)
+        self.mask = self.mask_processing(
+            mask_nii.get_fdata()
+        )
+
+    def forward(self, img):
+        new_img = img * self.mask
+        return new_img
+
+    def mask_processing(self, mask):
+        from scipy.ndimage import gaussian_filter
+        inverse_mask = 1 - mask
+        inverse_mask[inverse_mask == 0] = 1 - self.percentage / 100
+        gaussian_mask = gaussian_filter(inverse_mask, sigma=self.sigma)
+        return np.float32(gaussian_mask)
