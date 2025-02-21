@@ -83,7 +83,6 @@ def save_gif(x_tot_plot, fps, gif_path):
 
     ani = animation.FuncAnimation(fig, update, frames=N_frame + 2*fps, blit=True)
     ani.save(gif_path, writer='pillow', fps=fps) 
-    print('saved gif')
  
 
 def save_sequence(num_steps, x, name='', img_dir='./img', gif_dir = './gif', xlim=None, ylim=None, ipf_it=None, freq=1):
