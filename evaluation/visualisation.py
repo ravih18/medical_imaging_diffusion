@@ -18,21 +18,34 @@ class MidpointNormalize(mpl.colors.Normalize):
         return np.ma.masked_array(np.interp(value, x, y))
 
 
-def make_diff_plot(x, y, gt, plot_file=None):
-    fig, axes = plt.subplots(1, 4, figsize=(14, 4))
+def make_diff_plot(x, y, gt, m=None, plot_file=None):
 
-    imgs = [x, y, y-x, gt]
+    imgs = [x, y, x-y, gt]
+
+    labels = [
+        "Input: AD 30%",
+        "Output",
+        "Input - Output",
+        "Ground Truth",
+    ]
+
+    if m is not None:
+        imgs.append(m)
+        labels.append("Mask")
+
+    fig, axes = plt.subplots(1, len(imgs), figsize=(14, 4))    
 
     for i in range(len(axes)):
         axes[i].get_xaxis().set_ticks([])
         axes[i].get_yaxis().set_ticks([])
 
-        if i==2:
-            cmap = 'seismic'
+        if i==2 or i==4:
+            cmap, vmin, vmax = 'seismic', -1, 1
         else:
-            cmap = 'nipy_spectral'
+            cmap, vmin, vmax = 'nipy_spectral', 0, 1
 
-        axes[i].imshow(imgs[i], cmap=cmap, vmin=-1, vmax=1)
+        axes[i].imshow(np.rot90(imgs[i]), cmap=cmap, vmin=vmin, vmax=vmax)
+        axes[i].set_xlabel(labels[i], fontsize=12)
     
     cax0,kw0 = mpl.colorbar.make_axes(
         [ax for ax in axes.flat], location='left',
@@ -68,13 +81,24 @@ def make_diff_plot(x, y, gt, plot_file=None):
         plt.show()
 
 
-def make_traj_plot(input_img, samples, plot_file=None, n = 6):
+def make_traj_plot(input_img, samples, mask=None, plot_file=None, n = 6):
 
+    timesteps = samples.shape[0]
     images = [input_img]
-    for i in range(samples.shape[0]-1):
-        if i // (n-1):
-            images.append(samples[i].squeeze().cpu())
-    images.append(samples[-1].squeeze().cpu())
+    labels = [f"Input: 0/{timesteps}"]
+
+    for i in range(1, timesteps):
+        if i%(timesteps//n+2)==0:
+            if mask is not None:
+                images.append(samples[i].squeeze().cpu() * mask)
+            else:
+                images.append(samples[i].squeeze().cpu())
+            labels.append(f"T {i}/{timesteps}")
+    if mask is not None:
+        images.append(samples[-1].squeeze().cpu() * mask)
+    else:
+        images.append(samples[-1].squeeze().cpu())
+    labels.append(f"Output: {timesteps}/{timesteps}")
 
     fig, axes = plt.subplots(1, n, figsize=(3*n, 3))
 
@@ -82,7 +106,8 @@ def make_traj_plot(input_img, samples, plot_file=None, n = 6):
         axes[i].get_xaxis().set_ticks([])
         axes[i].get_yaxis().set_ticks([])
 
-        axes[i].imshow(images[i], cmap='nipy_spectral', vmin=-1, vmax=1)            
+        axes[i].imshow(np.rot90(images[i]), cmap='nipy_spectral', vmin=0, vmax=1)
+        axes[i].set_xlabel(labels[i], fontsize=12)        
     
     cax0,kw0 = mpl.colorbar.make_axes(
         [ax for ax in axes.flat], location='right',
@@ -103,3 +128,4 @@ def make_traj_plot(input_img, samples, plot_file=None, n = 6):
         plt.savefig(plot_file, format="pdf", bbox_inches="tight")
     else:
         plt.show()
+    plt.close()
