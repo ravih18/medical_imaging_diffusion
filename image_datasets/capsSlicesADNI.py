@@ -256,6 +256,88 @@ def get_ADNI_validation(img_size=64):
     return dataset_val_init, dataset_val_final
 
 
+def get_ADNI_AD_validation(img_size=64):
+    val_ad_tsv = CAPS_ADNI / "splits_dsb" / "validation_ad_baseline.tsv"
+    pet_preprocessing_json = CAPS_ADNI / "preprocessing_json" / "extract_pet_uniform_slice.json"
+
+    image_transformations = transforms.Compose([
+        transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
+    ])
+    slice_transformations = transforms.Compose([
+       transforms.Resize((img_size, img_size)),
+    ])
+
+    dataset_ad_val = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_hypo_json,
+        val_ad_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+    return dataset_ad_val
+
+def get_ADNI_hypo_datasets(img_size=64, pathology="AD", percentage=30):
+
+    pet_preprocessing_json = CAPS_ADNI / "preprocessing_json" / "extract_pet_uniform_slice.json" # v2025
+    
+
+    final_transformations = transforms.Compose([
+        SimulateHypometabolic(pathology=pathology, percentage=percentage),
+        transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
+    ])
+    image_transformations = transforms.Compose([
+        transforms.Lambda(lambda t: 2*(t-t.min())/(t.max()-t.min()) - 1) # normalize images between -1 and 1
+    ])
+    slice_transformations = transforms.Compose([
+       transforms.Resize((img_size, img_size)),
+    ])
+
+    train_cn_tsv = CAPS_ADNI / "splits_dsb" / "train_cn.tsv"
+    val_cn_tsv = CAPS_ADNI / "splits_dsb" / "validation_cn_baseline.tsv"
+
+    dataset_train_init = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        train_cn_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+    dataset_train_final = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        train_cn_tsv,
+        image_transformations=final_transformations,
+        slice_transformations=slice_transformations,
+        return_hypo=True,
+        label_transformations=image_transformations,
+    )
+    dataset_val_init = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        val_cn_tsv,
+        image_transformations=image_transformations,
+        slice_transformations=slice_transformations,
+    )
+    dataset_val_final = CapsSliceADNI(
+        CAPS_ADNI,
+        pet_preprocessing_json,
+        val_cn_tsv,
+        image_transformations=final_transformations,
+        slice_transformations=slice_transformations,
+        return_hypo=True,
+        label_transformations=image_transformations,
+    )
+
+    datasets = {
+        "train_init": dataset_train_init,
+        "train_final": dataset_train_final,
+        "val_init": dataset_val_init,
+        "val_final": dataset_val_final,
+    }
+
+    return datasets
+
+
 def get_dataset_val_hypo(img_size=64, pathology="AD", percentage=30, test=False):
 
     if test == True:
@@ -289,7 +371,7 @@ def get_dataset_val_hypo(img_size=64, pathology="AD", percentage=30, test=False)
 
 
 class SimulateHypometabolic(torch.nn.Module):
-    def __init__(self, pathology: str, percentage: int, sigma: int = 5):
+    def __init__(self, pathology: str, percentage: int, sigma: int = 2):
         import nibabel as nib
 
         super(SimulateHypometabolic, self).__init__()
