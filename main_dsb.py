@@ -10,7 +10,7 @@ parser.add_argument(
 )
 parser.add_argument(
     'task',
-    choices=['IXI', 'ADNI_T1_PET', 'ADNI_AD_CN', 'BRATS'],
+    choices=['IXI', 'ADNI_T1_PET', 'ADNI_AD_CN', 'ADNI_hypo', 'BRATS'],
     help='Training task for DSB',
 )
 args = parser.parse_args()
@@ -19,7 +19,7 @@ expe_dir = Path(f"experiments/{args.task}/dsb{args.model_number}")
 print(f"Working dir : {expe_dir}")
 dsb_param = dsb_config_from_toml(expe_dir / "config.toml")
 
-img_size = 128
+img_size = 32
 
 print(f"Working with images of size {img_size}")
 
@@ -32,6 +32,9 @@ elif args.task == 'ADNI_T1_PET':
 elif args.task == 'ADNI_AD_CN':
     from image_datasets.capsSlicesADNI import get_ADNI_datasets
     datasets = get_ADNI_datasets(args.task, img_size = img_size)
+elif args.task == 'ADNI_hypo':
+    from image_datasets.capsSlicesADNI import get_ADNI_hypo_datasets
+    datasets = get_ADNI_hypo_datasets(img_size = img_size, pathology='AD', percentage=30)
 elif args.task == 'BRATS':
     pass
 
