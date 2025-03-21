@@ -147,7 +147,8 @@ class DiffusionSchrodingerBridge(nn.Module):
             gamma_half = np.linspace(dsb_params.gamma_min, dsb_params.gamma_max, n)
         elif dsb_params.gamma_space == 'geomspace':
             gamma_half = np.geomspace(
-                dsb_params.gamma_min, dsb_params.gamma_max, n)
+                dsb_params.gamma_min, dsb_params.gamma_max, n
+            )
         gammas = np.concatenate([gamma_half, np.flip(gamma_half)])
         return torch.tensor(gammas).to(self.device)
 

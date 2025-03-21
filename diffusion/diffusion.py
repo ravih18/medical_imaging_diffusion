@@ -85,10 +85,10 @@ class DiffusionModel(nn.Module):
     def train(self, epochs, optimizer, trainloader, valloader=None, scheduler=None):
         print("\n\nStart training!")
         best_val_loss = np.inf
-        for epoch in range(epochs):
+        for epoch in tqdm(range(epochs)):
             train_loss = 0
-            print("="*10)
-            print(f"Training epochs {epoch}/{epochs}")
+            #print("="*10)
+            #print(f"Training epochs {epoch}/{epochs}")
             start_time = time.time()
             for step, batch in enumerate(trainloader):
                 optimizer.zero_grad()
@@ -104,7 +104,7 @@ class DiffusionModel(nn.Module):
                 optimizer.step()
 
                 train_loss += loss.item()
-            print(f"  Train Loss:\t{(train_loss/len(trainloader)):.6f}", )
+            #print(f"  Train Loss:\t{(train_loss/len(trainloader)):.6f}", )
 
             if valloader is not None:
                 val_loss = 0
@@ -117,13 +117,13 @@ class DiffusionModel(nn.Module):
                         loss = self.p_losses(batch, t ,loss_type=self.loss_type)
                         
                         val_loss += loss.item()
-                print(f"  Val Loss:\t{(val_loss/len(valloader)):.6f}")
+                #print(f"  Val Loss:\t{(val_loss/len(valloader)):.6f}")
 
-            print(f"  Time: {(time.time() - start_time):.3f} seconds")
+            #print(f"  Time: {(time.time() - start_time):.3f} seconds")
 
             if (scheduler is not None) and epoch%10==9:
                 scheduler.step()
-                print(f"  Learning rate after scheduler step: {scheduler.get_last_lr()[0]}")
+                #print(f"  Learning rate after scheduler step: {scheduler.get_last_lr()[0]}")
 
             if self.experiment_directory is not None:
                 self._save_checkpoint(epoch)
@@ -132,11 +132,11 @@ class DiffusionModel(nn.Module):
                         best_val_loss = val_loss
                         self.save_model(epoch, best_val_loss)
                 
-        print("End of training!")
+        #print("End of training!")
 
         if self.experiment_directory is not None and valloader is None:
             self.save_model(epochs, val_loss)
-            print(f"Saved model after last epoch.")
+            #print(f"Saved model after last epoch.")
 
     def compute_psnr(self, dataloader, psnr_step=10):
         psnr_out_list = []
@@ -145,11 +145,13 @@ class DiffusionModel(nn.Module):
             loss_accumulated = 0
             for step, batch in enumerate(dataloader):
                 batch = batch["image"].to(torch.float).to(self.device)
+                batch_size = batch.shape[0]
                 
-                t_tensor = torch.full_like(batch, t, device=self.device).long()
+                #t_tensor = torch.full_like(batch, t, device=self.device).long()
+                t_tensor = torch.full((batch_size,), t, device=self.device).long()
 
                 loss = self.p_losses(batch, t_tensor, loss_type='l2')
-                loss_accumulated += loss.item() / len(dataloader.batch_size)
+                loss_accumulated += loss.item() / dataloader.batch_size
 
             alphas_cumprod_t = self.alphas_cumprod[t]
             psnr_out = 10 * (np.log10(2**2) - torch.log10((1 - alphas_cumprod_t) / alphas_cumprod_t * loss_accumulated))
